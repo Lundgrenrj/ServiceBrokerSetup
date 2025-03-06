@@ -11,15 +11,16 @@ class Program
     private static readonly string connectionString = "Your SQL Server Connection String";
     private static readonly string bucketName = "your-s3-bucket";
     private static readonly string s3Folder = "exports/";
+    private static readonly string localFolderPath = "C:\\Temp\\Exports\\"; // Local folder for testing
 
     static async Task Main()
     {
         Console.WriteLine("Starting export...");
-        await ExportToS3InBatches();
+        await ExportToLocalAndS3();
         Console.WriteLine("Export completed.");
     }
 
-    static async Task ExportToS3InBatches()
+    static async Task ExportToLocalAndS3()
     {
         using var connection = new SqlConnection(connectionString);
         using var command = new SqlCommand("SELECT * FROM YourTable", connection);
@@ -39,9 +40,12 @@ class Program
             csvBuilder.AppendLine(GetCsvRow(reader));
             recordCount++;
 
-            if (recordCount % batchSize == 0) // Upload every 100,000 rows
+            if (recordCount % batchSize == 0) // Process every 100,000 rows
             {
-                await UploadBatchToS3(csvBuilder, batchNumber);
+                string batchFileName = $"export_batch_{batchNumber}.csv";
+                await WriteBatchToLocalFile(csvBuilder, batchFileName);
+                await UploadBatchToS3(csvBuilder, batchFileName);
+
                 batchNumber++;
                 csvBuilder.Clear(); // Clear memory for next batch
             }
@@ -50,7 +54,9 @@ class Program
         // Upload the last batch if it has remaining records
         if (csvBuilder.Length > 0)
         {
-            await UploadBatchToS3(csvBuilder, batchNumber);
+            string batchFileName = $"export_batch_{batchNumber}.csv";
+            await WriteBatchToLocalFile(csvBuilder, batchFileName);
+            await UploadBatchToS3(csvBuilder, batchFileName);
         }
     }
 
@@ -76,7 +82,18 @@ class Program
         return string.Join(",", values);
     }
 
-    static async Task UploadBatchToS3(StringBuilder csvData, int batchNumber)
+    static async Task WriteBatchToLocalFile(StringBuilder csvData, string fileName)
+    {
+        string filePath = Path.Combine(localFolderPath, fileName);
+
+        // Ensure the directory exists
+        Directory.CreateDirectory(localFolderPath);
+
+        await File.WriteAllTextAsync(filePath, csvData.ToString(), Encoding.UTF8);
+        Console.WriteLine($"Batch saved locally: {filePath}");
+    }
+
+    static async Task UploadBatchToS3(StringBuilder csvData, string fileName)
     {
         using var s3Client = new AmazonS3Client();
         using var memoryStream = new MemoryStream(Encoding.UTF8.GetBytes(csvData.ToString()));
@@ -84,12 +101,12 @@ class Program
         var request = new PutObjectRequest
         {
             BucketName = bucketName,
-            Key = $"{s3Folder}export_batch_{batchNumber}.csv",
+            Key = $"{s3Folder}{fileName}",
             InputStream = memoryStream,
             ContentType = "text/csv"
         };
 
         await s3Client.PutObjectAsync(request);
-        Console.WriteLine($"Batch {batchNumber} uploaded to S3.");
+        Console.WriteLine($"Batch uploaded to S3: {fileName}");
     }
 }
