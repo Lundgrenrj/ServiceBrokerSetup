@@ -54,19 +54,22 @@ class Program
     {
         using var s3Client = new AmazonS3Client();
 
-        memoryStream.Position = 0; // Reset stream position
+        // Clone stream before sending (so original doesn't get closed)
+        var uploadStream = new MemoryStream(memoryStream.ToArray());
+
         var request = new PutObjectRequest
         {
             BucketName = bucketName,
             Key = s3Key,
-            InputStream = memoryStream,
+            InputStream = uploadStream, // Use cloned stream
             ContentType = "text/csv"
         };
 
         await s3Client.PutObjectAsync(request);
+
         Console.WriteLine($"Uploaded {memoryStream.Length} bytes to S3.");
 
-        memoryStream.SetLength(0); // Clear stream for next batch
+        memoryStream.SetLength(0); // Reset for next batch (original stream remains open)
     }
 
     static string GetCsvHeader(SqlDataReader reader)
