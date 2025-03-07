@@ -123,4 +123,33 @@ class Program
 
         return string.Join(",", values);
     }
+
+
+    static async Task<int> StreamRemoteCsvLineCount()
+    {
+        using var s3Client = new AmazonS3Client();
+
+        var request = new GetObjectRequest
+        {
+            BucketName = bucketName,
+            Key = s3Key
+        };
+
+        using var response = await s3Client.GetObjectAsync(request);
+        using var reader = new StreamReader(response.ResponseStream);
+
+        int lineCount = 0;
+        char[] buffer = new char[8192]; // 8KB buffer size
+        int charsRead;
+
+        while ((charsRead = await reader.ReadAsync(buffer, 0, buffer.Length)) > 0)
+        {
+            for (int i = 0; i < charsRead; i++)
+            {
+                if (buffer[i] == '\n') lineCount++;
+            }
+        }
+
+        return lineCount;
+    }
 }
