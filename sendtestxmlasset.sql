@@ -2,9 +2,10 @@ CREATE PROCEDURE dbo.SendTestXML-Place-
     @-Place-ID INT
 AS
 BEGIN
-    DECLARE @sql NVARCHAR(MAX) = N'DECLARE @xml XML;
-    SET @xml = (
-        SELECT ';
+    DECLARE @sql NVARCHAR(MAX);
+    DECLARE @ColumnList NVARCHAR(MAX) = N'';
+    DECLARE @ColumnName NVARCHAR(128);
+    DECLARE @Source NVARCHAR(10);
 
     -- Temporary tables to store column names
     DECLARE @-Place-Columns TABLE (ColumnName NVARCHAR(128));
@@ -43,11 +44,7 @@ BEGIN
     FROM @-Place-2Columns
     WHERE ColumnName NOT IN (SELECT ColumnName FROM @-Place-Columns); -- Exists only in -Place-2
 
-    -- Construct the dynamic SELECT statement
-    DECLARE @ColumnList NVARCHAR(MAX) = '';
-    DECLARE @ColumnName NVARCHAR(128);
-    DECLARE @Source NVARCHAR(10);
-
+    -- Construct the dynamic SELECT statement in chunks
     DECLARE colCursor CURSOR FOR
     SELECT ColumnName, Source FROM @Columns;
 
@@ -57,40 +54,42 @@ BEGIN
     WHILE @@FETCH_STATUS = 0
     BEGIN
         IF @Source = 'Both'
-            SET @ColumnList = @ColumnList + 
-                'COALESCE(a.[' + @ColumnName + '], b.[' + @ColumnName + ']) AS [' + @ColumnName + '], ';
+            SET @ColumnList = @ColumnList + N'COALESCE(a.[' + @ColumnName + N'], b.[' + @ColumnName + N']) AS [' + @ColumnName + N'], ';
         ELSE IF @Source = '-Place-'
-            SET @ColumnList = @ColumnList + 
-                'a.[' + @ColumnName + '] AS [' + @ColumnName + '], ';
+            SET @ColumnList = @ColumnList + N'a.[' + @ColumnName + N'] AS [' + @ColumnName + N'], ';
         ELSE
-            SET @ColumnList = @ColumnList + 
-                'b.[' + @ColumnName + '] AS [' + @ColumnName + '], ';
+            SET @ColumnList = @ColumnList + N'b.[' + @ColumnName + N'] AS [' + @ColumnName + N'], ';
+
+        -- If @ColumnList gets too large, break into chunks to avoid SQL Server limitations
+        IF LEN(@ColumnList) > 3000
+        BEGIN
+            PRINT @ColumnList; -- Debugging: Print part of the SQL
+            SET @ColumnList = N''; -- Reset for next chunk
+        END
 
         FETCH NEXT FROM colCursor INTO @ColumnName, @Source;
     END;
     CLOSE colCursor;
     DEALLOCATE colCursor;
 
-    -- Ensure @ColumnList is not empty before trimming
+    -- Trim trailing comma and space
     IF LEN(@ColumnList) > 0
-        SET @ColumnList = LEFT(@ColumnList, LEN(@ColumnList) - 2); -- Remove last comma and space
+        SET @ColumnList = LEFT(@ColumnList, LEN(@ColumnList) - 2);
 
-    -- Append FROM clause only if columns exist
-    IF LEN(@ColumnList) > 0
-    BEGIN
-        SET @sql = @sql + @ColumnList + '
-            FROM AVE-Place-.dbo.-Place- a
-            LEFT OUTER JOIN AVE-Place-2.dbo.-Place-2 b ON b.-Place-ID = a.-Place-ID
-            WHERE a.-Place-ID = @-Place-ID
-            FOR XML PATH(''-Place-Data''), ROOT(''-Place-s''), TYPE
-        );
-        SELECT @xml;';
-    
-        -- Execute the dynamic SQL
-        EXEC sp_executesql @sql, N'@-Place-ID INT', @-Place-ID;
-    END
-    ELSE
-    BEGIN
-        PRINT 'No columns found for -Place- and -Place-2';
-    END
+    -- Assemble full SQL statement
+    SET @sql = N'DECLARE @xml XML;
+    SET @xml = (
+        SELECT ' + @ColumnList + N'
+        FROM AVE-Place-.dbo.-Place- a
+        LEFT OUTER JOIN AVE-Place-2.dbo.-Place-2 b ON b.-Place-ID = a.-Place-ID
+        WHERE a.-Place-ID = @-Place-ID
+        FOR XML PATH(''-Place-Data''), ROOT(''-Place-s''), TYPE
+    );
+    SELECT @xml;';
+
+    -- Debugging: Print SQL if needed
+    PRINT @sql; -- Comment out in production
+
+    -- Execute the dynamic SQL
+    EXEC sp_executesql @sql, N'@-Place-ID INT', @-Place-ID;
 END;
