@@ -1,31 +1,34 @@
-CREATE TABLE #-Place- (
-    -Place-ID INT,
-    Name NVARCHAR(255),
-    Location NVARCHAR(255)
-);
+DECLARE @TableName1 NVARCHAR(128) = '-places-';  -- First table
+DECLARE @TableName2 NVARCHAR(128) = '-places-2'; -- Second table
+DECLARE @sql NVARCHAR(MAX) = '';
+DECLARE @columns NVARCHAR(MAX) = '';
 
-CREATE TABLE #-Place-2 (
-    -Place-ID INT,
-    InspectionDate DATE,
-    Warranty DATE
-);
+-- Step 1: Get column names dynamically for -places-
+SELECT @columns = STRING_AGG('T.c.value(''(' + COLUMN_NAME + ')[1]'', ''NVARCHAR(MAX)'') AS [' + COLUMN_NAME + ']', ', ')
+FROM sys.columns
+WHERE OBJECT_ID = OBJECT_ID('AVE-places-.dbo.' + @TableName1);  -- Adjust schema if needed
 
--- Extract -Place- Data
-INSERT INTO #-Place- (-Place-ID, Name, Location)
-SELECT 
-    T.c.value('(-Place-ID)[1]', 'INT'),
-    T.c.value('(Name)[1]', 'NVARCHAR(255)'),
-    T.c.value('(Location)[1]', 'NVARCHAR(255)')
-FROM @xml.nodes('/-Place-s/-Place-Data/-Place-') AS T(c);
+-- Step 2: Construct the query for -places-
+SET @sql = 'SELECT ' + @columns + ' INTO #-places- FROM @xml.nodes(''/-places-s/-places-Data/-places-'') AS T(c);';
 
--- Extract -Place-2 Data
-INSERT INTO #-Place-2 (-Place-ID, InspectionDate, Warranty)
-SELECT 
-    T.c.value('(-Place-ID)[1]', 'INT'),
-    T.c.value('(InspectionDate)[1]', 'DATE'),
-    T.c.value('(Warranty)[1]', 'DATE')
-FROM @xml.nodes('/-Place-s/-Place-Data/-Place-2') AS T(c);
+-- Execute the dynamic SQL for -places-
+EXEC sp_executesql @sql, N'@xml XML', @xml;
+
+-- Reset variables for the second table
+SET @sql = '';
+SET @columns = '';
+
+-- Step 3: Get column names dynamically for -places-2
+SELECT @columns = STRING_AGG('T.c.value(''(' + COLUMN_NAME + ')[1]'', ''NVARCHAR(MAX)'') AS [' + COLUMN_NAME + ']', ', ')
+FROM sys.columns
+WHERE OBJECT_ID = OBJECT_ID('AVE-places-2.dbo.' + @TableName2);  -- Adjust schema if needed
+
+-- Step 4: Construct the query for -places-2
+SET @sql = 'SELECT ' + @columns + ' INTO #-places-2 FROM @xml.nodes(''/-places-s/-places-Data/-places-2'') AS T(c);';
+
+-- Execute the dynamic SQL for -places-2
+EXEC sp_executesql @sql, N'@xml XML', @xml;
 
 -- Verify results
-SELECT * FROM #-Place-;
-SELECT * FROM #-Place-2;
+SELECT * FROM #-places-;
+SELECT * FROM #-places-2;
